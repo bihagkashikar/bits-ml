@@ -57,6 +57,9 @@ if dataset_source == "Repository CSV":
             "(https://github.com/bihagkashikar/bits-ml/blob/master/spambase.csv)."
         ),
     )
+    if selected_path is None:
+        st.error("Select a CSV file from the repository.")
+        st.stop()
     dataset_path = (repository_root / selected_path).resolve()
     try:
         dataset_path.relative_to(repository_root)
@@ -85,11 +88,12 @@ if len(data.columns) < 2:
     st.error("The dataset must contain at least one feature column and one target column.")
     st.stop()
 
-preferred_target = "is_spam" if "is_spam" in data.columns else data.columns[-1]
+target_options = data.columns.to_list()
+preferred_target = "is_spam" if "is_spam" in target_options else target_options[-1]
 target_column = st.sidebar.selectbox(
     "Target column",
-    options=data.columns.tolist(),
-    index=data.columns.get_loc(preferred_target),
+    options=target_options,
+    index=target_options.index(preferred_target),
 )
 
 st.subheader("Dataset Overview")
@@ -151,7 +155,14 @@ if not evaluation or evaluation["signature"] != run_signature:
 
 results = evaluation["results"]
 details = evaluation["details"]
-metric_columns = ["Accuracy", "AUC", "Precision", "Recall", "F1", "MCC"]
+metric_columns = [
+    "Accuracy",
+    "AUC",
+    "Precision",
+    "Recall",
+    "F1",
+    "MCC",
+]
 
 st.subheader("Model comparison" if len(results) > 1 else "Model evaluation")
 st.caption(
@@ -162,7 +173,7 @@ comparison = pd.DataFrame.from_dict(results, orient="index")[metric_columns]
 comparison.index.name = "ML Model Name"
 st.dataframe(
     comparison.style.format("{:.3f}").highlight_max(
-        subset=metric_columns, color="#d9f2d9"
+        subset=pd.Index(metric_columns), color="#d9f2d9"
     ),
     width="stretch",
 )
