@@ -1,3 +1,5 @@
+import hashlib
+import io
 from pathlib import Path
 
 import pandas as pd
@@ -9,10 +11,14 @@ from models.evaluation import MODEL_NAMES, evaluate_models
 
 st.set_page_config(page_title="Spambase model comparison", page_icon="📧", layout="wide")
 
-st.title("Spambase: binary classification")
-st.write(
-    "Compare five classifiers on one stratified holdout split, inspect their "
-    "evaluation metrics, and explore the errors made by each model."
+st.title("Spambase Classification Models")
+st.subheader("Problem Statement")
+st.markdown(
+    "- Implement multiple classification models on the same dataset.\n"
+    "- Build an interactive Streamlit web application to demonstrate the models.\n"
+    "- Deploy the app on Streamlit Community Cloud (free tier).\n"
+    "- Share clickable links for evaluation: "
+    "[Open the live Streamlit app](https://bits-ml-2026aj05102.streamlit.app/)."
 )
 
 uploaded_file = st.sidebar.file_uploader("Upload a labeled CSV dataset", type=["csv"])
@@ -21,18 +27,20 @@ if uploaded_file is None:
     if not default_path.exists():
         st.info("Upload a labeled CSV to begin. The bundled Spambase CSV was not found.")
         st.stop()
-    data = pd.read_csv(default_path)
+    dataset_bytes = default_path.read_bytes()
     st.sidebar.caption("Using the bundled spambase.csv dataset.")
 else:
-    try:
-        data = pd.read_csv(uploaded_file)
-    except (UnicodeDecodeError, pd.errors.ParserError, ValueError) as error:
-        st.error(f"Could not read the uploaded CSV: {error}")
-        st.stop()
-    if data.empty:
-        st.error("The uploaded CSV contains no data rows.")
-        st.stop()
+    dataset_bytes = uploaded_file.getvalue()
 
+try:
+    data = pd.read_csv(io.BytesIO(dataset_bytes))
+except (UnicodeDecodeError, pd.errors.ParserError, pd.errors.EmptyDataError, ValueError) as error:
+    st.error(f"Could not read the CSV dataset: {error}")
+    st.stop()
+
+if data.empty:
+    st.error("The dataset contains no data rows.")
+    st.stop()
 if len(data.columns) < 2:
     st.error("The dataset must contain at least one feature column and one target column.")
     st.stop()
@@ -44,71 +52,114 @@ target_column = st.sidebar.selectbox(
     index=data.columns.get_loc(preferred_target),
 )
 
-st.subheader("Dataset overview")
+st.subheader("Dataset Overview")
 overview_columns = st.columns(4)
-overview_columns[0].metric("Rows", f"{len(data):,}")
-overview_columns[1].metric("Columns", f"{len(data.columns):,}")
+overview_columns[0].metric("Instances", f"{len(data):,}")
+overview_columns[1].metric("Features", f"{len(data.columns) - 1:,}")
 overview_columns[2].metric("Missing cells", f"{int(data.isna().sum().sum()):,}")
 overview_columns[3].metric(
     "Rows missing target", f"{int(data[target_column].isna().sum()):,}"
 )
-st.caption("Preview")
-st.dataframe(data.head(10), use_container_width=True)
+if target_column == "is_spam" and len(data.columns) == 58:
+    st.caption(
+        "UCI Spambase contains 4,601 email instances and 57 features. "
+        "[View the UCI dataset](https://archive.ics.uci.edu/dataset/94)."
+    )
 st.caption(
     "Rows without a target are excluded. Missing or non-numeric feature values "
-    "are imputed with training-set medians."
+    "are imputed with medians learned from the training split."
 )
+st.dataframe(data.head(10), width="stretch")
 
-with st.spinner("Training models and evaluating the shared test split..."):
-    try:
-        results, details = evaluate_models(data, target_column)
-    except ValueError as error:
-        st.error(str(error))
-        st.stop()
+st.subheader("Choose models and run evaluation")
+run_mode = st.radio(
+    "Evaluation mode",
+    options=["Compare all five models", "Run one selected model"],
+    horizontal=True,
+)
+selected_model = None
+if run_mode == "Run one selected model":
+    selected_model = st.selectbox("Model", MODEL_NAMES)
+    models_to_run = [selected_model]
+else:
+    models_to_run = MODEL_NAMES
 
-st.subheader("Model comparison")
+dataset_digest = hashlib.sha256(dataset_bytes).hexdigest()
+run_signature = (dataset_digest, target_column, tuple(models_to_run))
+run_clicked = st.button("Run evaluation", type="primary")
+if run_clicked:
+    with st.spinner("Training model(s) and evaluating the shared test split..."):
+        try:
+            results, details = evaluate_models(
+                data,
+                target_column,
+                model_names=models_to_run,
+            )
+        except ValueError as error:
+            st.error(str(error))
+            st.stop()
+    st.session_state["evaluation"] = {
+        "signature": run_signature,
+        "results": results,
+        "details": details,
+    }
+
+evaluation = st.session_state.get("evaluation")
+if not evaluation or evaluation["signature"] != run_signature:
+    st.info("Choose an evaluation mode and click **Run evaluation** to train the model(s).")
+    st.stop()
+
+results = evaluation["results"]
+details = evaluation["details"]
+metric_columns = ["Accuracy", "AUC", "Precision", "Recall", "F1", "MCC"]
+
+st.subheader("Model comparison" if len(results) > 1 else "Model evaluation")
 st.caption(
-    "All models use the same stratified 25% test split (random seed 42). "
+    "All selected models use the same stratified 25% test split (random seed 42). "
     "Preprocessing is fitted on training data only."
 )
-metric_columns = ["Accuracy", "AUC", "Precision", "Recall", "F1", "MCC"]
 comparison = pd.DataFrame.from_dict(results, orient="index")[metric_columns]
 comparison.index.name = "ML Model Name"
 st.dataframe(
     comparison.style.format("{:.3f}").highlight_max(
         subset=metric_columns, color="#d9f2d9"
     ),
-    use_container_width=True,
+    width="stretch",
 )
 
 st.subheader("Performance observations")
-for name, metrics in results.items():
+for name in results:
     with st.container(border=True):
         st.markdown(f"**{name}**")
         st.write(details[name]["observation"])
 
-winner = max(
-    results,
-    key=lambda name: (
-        results[name]["F1"],
-        results[name]["AUC"],
-        results[name]["MCC"],
-    ),
-)
-st.success(
-    f"Overall winner on this holdout split: **{winner}** "
-    "(ranked by F1, then AUC, then MCC)."
-)
-st.caption(
-    "The winner is a split-specific result, not a guarantee of future performance. "
-    "For deployment, validate with cross-validation and select a decision threshold "
-    "based on the relative cost of missed spam and legitimate mail flagged as spam."
-)
+if len(results) > 1:
+    winner = max(
+        results,
+        key=lambda name: (
+            results[name]["F1"],
+            results[name]["AUC"],
+            results[name]["MCC"],
+        ),
+    )
+    st.success(
+        f"Overall winner on this holdout split: **{winner}** "
+        "(ranked by F1, then AUC, then MCC)."
+    )
+    st.caption(
+        "The winner is a split-specific result, not a guarantee of future performance. "
+        "For deployment, validate with cross-validation and select a decision threshold "
+        "based on the relative cost of missed spam and legitimate mail flagged as spam."
+    )
 
-st.subheader("Inspect one model")
-selected_model = st.selectbox("Model", MODEL_NAMES)
-selected_details = details[selected_model]
-selected_metrics = results[selected_model]
+st.subheader("Confusion matrix and classification report")
+if len(results) > 1:
+    inspected_model = st.selectbox("Inspect model", list(results))
+else:
+    inspected_model = next(iter(results))
+
+selected_details = details[inspected_model]
+selected_metrics = results[inspected_model]
 detail_columns = st.columns(6)
 for column, metric in zip(detail_columns, metric_columns):
     column.metric(metric, f"{selected_metrics[metric]:.3f}")
@@ -126,7 +177,7 @@ st.dataframe(
         index=pd.Index(label_names, name="Actual"),
         columns=pd.Index(label_names, name="Predicted"),
     ),
-    use_container_width=True,
+    width="stretch",
 )
 st.markdown("**Classification report**")
 st.caption(

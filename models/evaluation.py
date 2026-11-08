@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -95,9 +95,17 @@ def _observation(metrics: dict[str, float]) -> str:
 
 
 def evaluate_models(
-    data: pd.DataFrame, target_column: str
+    data: pd.DataFrame,
+    target_column: str,
+    model_names: Sequence[str] | None = None,
 ) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, object]]]:
     features, target, classes = _prepare_dataset(data, target_column)
+    selected_models = MODEL_NAMES if model_names is None else list(model_names)
+    unknown_models = [name for name in selected_models if name not in MODEL_BUILDERS]
+    if unknown_models:
+        raise ValueError(f"Unknown model name(s): {', '.join(unknown_models)}.")
+    if not selected_models:
+        raise ValueError("Select at least one model to evaluate.")
 
     train_features, test_features, train_target, test_target = train_test_split(
         features,
@@ -109,7 +117,8 @@ def evaluate_models(
 
     results: dict[str, dict[str, float]] = {}
     details: dict[str, dict[str, object]] = {}
-    for name, build_model in MODEL_BUILDERS.items():
+    for name in selected_models:
+        build_model = MODEL_BUILDERS[name]
         model = build_model()
         model.fit(train_features, train_target)
         predictions = model.predict(test_features)

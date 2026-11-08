@@ -46,12 +46,13 @@ On this split, the Support Vector Machine has the highest F1 and MCC; Logistic R
 The [live Streamlit app](https://bits-ml-2026aj05102.streamlit.app/) includes:
 
 - A CSV upload option and target-column selector.
-- A dropdown to inspect any of the five classifiers.
+- An evaluation mode to run one selected classifier or compare all five.
+- An explicit **Run evaluation** button so model training does not happen on every UI change.
 - A comparison table for accuracy, AUC, precision, recall, F1, and MCC.
 - Per-model performance observations.
 - A confusion matrix and classification report for the selected model.
 
-The app loads the included `spambase.csv` by default. For uploaded datasets, it requires a binary target and numeric feature columns. Rows missing the target are excluded; missing or non-numeric feature values are imputed using medians learned from the training split.
+The app loads the included `spambase.csv` by default. For uploaded datasets, it requires a binary target and numeric feature columns. Rows missing the target are excluded; missing or non-numeric feature values are imputed using medians learned from the training split. Select the evaluation mode and click **Run evaluation** to train the selected model or all five models.
 
 ## Run Locally
 
