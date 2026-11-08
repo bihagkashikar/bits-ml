@@ -52,7 +52,7 @@ The [live Streamlit app](https://bits-ml-2026aj05102.streamlit.app/) includes:
 - Per-model performance observations.
 - A confusion matrix and classification report for the selected model.
 
-The app loads the included `spambase.csv` by default. For uploaded datasets, it requires a binary target and numeric feature columns. Rows missing the target are excluded; missing or non-numeric feature values are imputed using medians learned from the training split. Select the evaluation mode and click **Run evaluation** to train the selected model or all five models.
+The app lists CSV files committed anywhere in the repository (excluding `.git` and local virtual-environment folders); `spambase.csv` is selected by default. You can also upload a CSV from your device. For either source, the dataset must have a binary target and numeric feature columns. Rows missing the target are excluded; missing or non-numeric feature values are imputed using medians learned from the training split. Select the evaluation mode and click **Run evaluation** to train the selected model or all five models.
 
 ## Run Locally
 

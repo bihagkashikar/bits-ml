@@ -1,5 +1,6 @@
 import hashlib
 import io
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -11,25 +12,64 @@ from models.evaluation import MODEL_NAMES, evaluate_models
 
 st.set_page_config(page_title="Spambase model comparison", page_icon="📧", layout="wide")
 
-st.title("Spambase Classification Models")
+st.title("Machine Learning - Classification Models")
 st.subheader("Problem Statement")
 st.markdown(
     "- Implement multiple classification models on the same dataset.\n"
     "- Build an interactive Streamlit web application to demonstrate the models.\n"
-    "- Deploy the app on Streamlit Community Cloud (free tier).\n"
-    "- Share clickable links for evaluation: "
-    "[Open the live Streamlit app](https://bits-ml-2026aj05102.streamlit.app/)."
+    "- Compare the models based on their performance metrics.\n"
 )
 
-uploaded_file = st.sidebar.file_uploader("Upload a labeled CSV dataset", type=["csv"])
-if uploaded_file is None:
-    default_path = Path(__file__).with_name("spambase.csv")
-    if not default_path.exists():
-        st.info("Upload a labeled CSV to begin. The bundled Spambase CSV was not found.")
+repository_root = Path(__file__).resolve().parent
+repository_csvs = []
+for current_directory, directories, filenames in os.walk(repository_root):
+    directories[:] = [
+        directory
+        for directory in directories
+        if directory not in {".git", ".venv", "__pycache__"}
+    ]
+    for filename in filenames:
+        if filename.lower().endswith(".csv"):
+            path = Path(current_directory) / filename
+            try:
+                relative_path = path.resolve().relative_to(repository_root)
+            except ValueError:
+                continue
+            repository_csvs.append(relative_path.as_posix())
+repository_csvs.sort()
+
+dataset_source = st.sidebar.radio(
+    "Dataset source",
+    options=["Repository CSV", "Upload CSV"],
+)
+if dataset_source == "Repository CSV":
+    if not repository_csvs:
+        st.error("No CSV files were found in the repository.")
         st.stop()
-    dataset_bytes = default_path.read_bytes()
-    st.sidebar.caption("Using the bundled spambase.csv dataset.")
+    default_dataset = "spambase.csv" if "spambase.csv" in repository_csvs else repository_csvs[0]
+    selected_path = st.sidebar.selectbox(
+        "CSV file in repository",
+        options=repository_csvs,
+        index=repository_csvs.index(default_dataset),
+        help=(
+            "The bundled `spambase.csv` is selected by default. "
+            "[View its GitHub repository path]"
+            "(https://github.com/bihagkashikar/bits-ml/blob/master/spambase.csv)."
+        ),
+    )
+    dataset_path = (repository_root / selected_path).resolve()
+    try:
+        dataset_path.relative_to(repository_root)
+    except ValueError:
+        st.error("The selected dataset path must be inside the repository.")
+        st.stop()
+    dataset_bytes = dataset_path.read_bytes()
+    st.sidebar.caption(f"Using `{selected_path}` from the repository.")
 else:
+    uploaded_file = st.sidebar.file_uploader("Upload a labeled CSV dataset", type=["csv"])
+    if uploaded_file is None:
+        st.info("Upload a CSV file or select one from the repository.")
+        st.stop()
     dataset_bytes = uploaded_file.getvalue()
 
 try:
